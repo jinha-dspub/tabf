@@ -20,4 +20,5 @@ Imports:
     labelled,
     htmlTable,
     stats,
-    utils
+    utils,
+    ggplot2

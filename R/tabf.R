@@ -1,3 +1,10 @@
+# Global variables to avoid R CMD check NOTEs
+utils::globalVariables(c(
+  "variables", "values", "n", "prob", "smry", "avg", "std", "p.value",
+  "ranks", "order", "tidied", "fit", "dat", ".stratas_tmp", "data",
+  "or", "ll", "ul", "pvalue", "keys", "OR95CI", "Variables", "rank", "name"
+))
+
 #' Calculate Chi-Square Test Results for Table 1
 #'
 #' This function computes the p-values from a Pearson's Chi-squared test for multiple categorical variables against a stratifying variable. It is a core utility for generating Phase 3 Table 1 characteristics in epidemiological research.
@@ -8,6 +15,8 @@
 #'
 #' @return A nested tibble containing the `variables` names and the formatted `p.value` (as "<0.001" or a 3-decimal string).
 #' @import dplyr tidyr purrr broom labelled
+#' @importFrom stats confint.default na.omit sd setNames t.test chisq.test
+#' @importFrom utils as.roman head
 #' @export
 #'
 #' @examples
@@ -38,9 +47,9 @@ tab.Chisq = function(dat1, stratas, catVars){
   })
 }
 
-#' Calculate T-Test Results for Table 1
+#' Calculate T-Test / ANOVA Results for Table 1
 #'
-#' This function computes p-values using Student's t-test for comparing the means of multiple continuous variables across a two-level stratifying variable. Used in Phase 3 Table 1 construction.
+#' This function computes p-values directly for comparing the means of multiple continuous variables across a stratifying variable. It performs Student's t-test for binary stratas and ANOVA for stratas with 3 or more levels. Used in Phase 3 Table 1 construction.
 #'
 #' @param dat1 A data frame containing the variables for analysis.
 #' @param stratas A character string specifying the name of the binary stratifying variable.
@@ -65,20 +74,26 @@ tab.Ttest =function(dat1, stratas, conVars){
       group_by(variables) %>%
       nest() %>%
       mutate(
-        fit   = map(data, function(df) {
-          # Extract values for each level of the binary stratas
-          levels <- unique(df$.stratas_tmp)
-          if(length(levels) != 2) return(NULL) # Safety check
-          g1 <- df$values[df$.stratas_tmp == levels[1]]
-          g2 <- df$values[df$.stratas_tmp == levels[2]]
-          if(length(g1) == 0 || length(g2) == 0) return(NULL)
-          t.test(g1, g2)
-        }),
-        tidied = map(fit, ~if(is.null(.x)) tibble(p.value = as.numeric(NA)) else tidy(.x))
+        p.value = map_dbl(data, function(df) {
+          # Extract non-NA levels
+          df <- na.omit(df)
+          levels <- as.character(unique(df$.stratas_tmp))
+          if(length(levels) == 2) {
+            g1 <- df$values[df$.stratas_tmp == levels[1]]
+            g2 <- df$values[df$.stratas_tmp == levels[2]]
+            if(length(g1) == 0 || length(g2) == 0) return(as.numeric(NA))
+            return(t.test(g1, g2)$p.value)
+          } else if(length(levels) > 2) {
+            # Perform ANOVA for 3 or more levels
+            res <- aov(values ~ .stratas_tmp, data = df)
+            return(summary(res)[[1]][["Pr(>F)"]][1])
+          } else {
+            return(as.numeric(NA))
+          }
+        })
       ) %>%
-      unnest(tidied) %>%
       select(variables, p.value) %>%
-      mutate(p.value = ifelse(p.value <0.001, "<0.001", sprintf("%.3f", p.value)))
+      mutate(p.value = ifelse(is.na(p.value), "", ifelse(p.value <0.001, "<0.001", sprintf("%.3f", p.value))))
   })
 }
 
@@ -88,22 +103,29 @@ tab.Ttest =function(dat1, stratas, conVars){
 #' For categorical variables, it calculates counts and column percentages. For continuous variables, it calculates means and standard deviations. It automatically appends p-values using chi-square tests and t-tests.
 #'
 #' @param dat1 A data frame.
-#' @param stratas A character string specifying the stratifying variable (e.g., "sex" or "disease_status"). If not stratifying, provide a dummy variable.
+#' @param stratas A character string specifying the stratifying variable (e.g., "sex"). If NULL, generates a univariate Table 1 (Total column only).
 #' @param catVars A character vector of categorical variable names. Can be NULL.
 #' @param conVars A character vector of continuous variable names. Can be NULL.
 #'
-#' @return A formatted data frame ready for HTML/Markdown rendering with `Variables`, `Values`, strata levels, and `p.value`.
+#' @return A formatted data frame ready for HTML/Markdown rendering with `Variables`, `Values`, strata levels, and `p.value` (if stratas is provided).
 #' @import dplyr tidyr purrr stringr broom labelled
 #' @export
 #'
 #' @examples
 #' \dontrun{
 #' tabf(mydata, "disease", c("sex", "smoking"), c("age", "bmi"))
+#' tabf(mydata, NULL, c("sex", "smoking"), c("age", "bmi")) # Univariate
 #' }
-tabf = function(dat1, stratas, catVars = NULL, conVars = NULL){
+tabf = function(dat1, stratas = NULL, catVars = NULL, conVars = NULL){
   suppressWarnings({
     labelled::var_label(dat1) <- NULL
     dat1 = labelled::remove_labels(dat1)
+    
+    is_univariate <- is.null(stratas)
+    if(is_univariate) {
+      dat1$Total <- "Total"
+      stratas <- "Total"
+    }
   
     if(!is.null(catVars)) {
       varOrdercat = tibble("variables"=c(catVars)) %>%
@@ -181,31 +203,43 @@ tabf = function(dat1, stratas, catVars = NULL, conVars = NULL){
   
     tabDat = rbind(catTab, conTab)
     
-    if(!is.null(catVars)){
-      catPvalue = tab.Chisq(dat1, stratas, catVars)
+    if(is_univariate) {
+      tab1 = tabDat %>%
+        left_join(varOrder, by = c("variables")) %>%
+        arrange(order, values) %>%
+        group_by(variables) %>%
+        mutate(ranks = row_number()) %>%
+        mutate(variables = ifelse(ranks==min(ranks), variables, "")) %>%
+        ungroup() %>%
+        select(-order, -ranks)%>%
+        mutate(values = str_replace(values, "[:digit:]\\.", ""))
     } else {
-      catPvalue = data.frame(variables=c(""), p.value=c(""))
-    }
+      if(!is.null(catVars)){
+        catPvalue = tab.Chisq(dat1, stratas, catVars)
+      } else {
+        catPvalue = data.frame(variables=c(""), p.value=c(""))
+      }
+      
+      if(!is.null(conVars)){
+        conPvalue = tab.Ttest(dat1, stratas, conVars)
+      } else {
+        conPvalue = data.frame(variables=c(""), p.value=c(""))
+      }
+      
+      tabPvalue = rbind(catPvalue, conPvalue) %>% na.omit()
     
-    if(!is.null(conVars)){
-      conPvalue = tab.Ttest(dat1, stratas, conVars)
-    } else {
-      conPvalue = data.frame(variables=c(""), p.value=c(""))
+      tab1 = tabDat %>%
+        left_join(tabPvalue, by=c("variables")) %>%
+        left_join(varOrder, by = c("variables")) %>%
+        arrange(order, values) %>%
+        group_by(variables) %>%
+        mutate(ranks = row_number()) %>%
+        mutate(p.value   = ifelse(ranks==min(ranks), p.value,   "")) %>%
+        mutate(variables = ifelse(ranks==min(ranks), variables, "")) %>%
+        ungroup() %>%
+        select(-order, -ranks)%>%
+        mutate(values = str_replace(values, "[:digit:]\\.", ""))
     }
-    
-    tabPvalue = rbind(catPvalue, conPvalue) %>% na.omit()
-  
-    tab1 = tabDat %>%
-      left_join(tabPvalue, by=c("variables")) %>%
-      left_join(varOrder, by = c("variables")) %>%
-      arrange(order, values) %>%
-      group_by(variables) %>%
-      mutate(ranks = row_number()) %>%
-      mutate(p.value   = ifelse(ranks==min(ranks), p.value,   "")) %>%
-      mutate(variables = ifelse(ranks==min(ranks), variables, "")) %>%
-      ungroup() %>%
-      select(-order, -ranks)%>%
-      mutate(values = str_replace(values, "[:digit:]\\.", ""))
     return(tab1)
   })
 }
@@ -216,7 +250,7 @@ tabf = function(dat1, stratas, catVars = NULL, conVars = NULL){
 #' Useful when the strata variable represents an outcome and you want to see the prevalence/incidence across different category levels (e.g., prevalence of disease by age group).
 #'
 #' @param dat1 A data frame.
-#' @param stratas A character string specifying the stratifying variable (e.g., "disease_status"). 
+#' @param stratas A character string specifying the stratifying variable (e.g., "disease_status"). If NULL, generates univariate summary.
 #' @param catVars A character vector of categorical variable names. Can be NULL.
 #' @param conVars A character vector of continuous variable names. Can be NULL.
 #'
@@ -228,10 +262,16 @@ tabf = function(dat1, stratas, catVars = NULL, conVars = NULL){
 #' \dontrun{
 #' tabf2(mydata, "disease_outcome", c("age_group", "occupation"))
 #' }
-tabf2 = function(dat1, stratas, catVars = NULL, conVars = NULL){
+tabf2 = function(dat1, stratas = NULL, catVars = NULL, conVars = NULL){
   suppressWarnings({
     labelled::var_label(dat1) <- NULL
     dat1 = labelled::remove_labels(dat1)
+    
+    is_univariate <- is.null(stratas)
+    if(is_univariate) {
+      dat1$Total <- "Total"
+      stratas <- "Total"
+    }
     if(!is.null(catVars)) {
       varOrdercat = tibble("variables"=c(catVars)) %>%
         mutate(order = row_number())
@@ -308,32 +348,43 @@ tabf2 = function(dat1, stratas, catVars = NULL, conVars = NULL){
   
     tabDat = rbind(catTab, conTab)
   
-    if(!is.null(catVars)){
-      catPvalue = tab.Chisq(dat1, stratas, catVars)
+    if(is_univariate) {
+      tab1 = tabDat %>%
+        left_join(varOrder, by = c("variables")) %>%
+        arrange(order, values) %>%
+        group_by(variables) %>%
+        mutate(ranks = row_number()) %>%
+        mutate(variables = ifelse(ranks==min(ranks), variables, "")) %>%
+        ungroup() %>%
+        select(-order, -ranks)%>%
+        mutate(values = str_replace(values, "[:digit:]\\.", ""))
     } else {
-      catPvalue = data.frame(variables=c(""), p.value=c(""))
+      if(!is.null(catVars)){
+        catPvalue = tab.Chisq(dat1, stratas, catVars)
+      } else {
+        catPvalue = data.frame(variables=c(""), p.value=c(""))
+      }
+    
+      if(!is.null(conVars)){
+        conPvalue = tab.Ttest(dat1, stratas, conVars)
+      } else {
+        conPvalue = data.frame(variables=c(""), p.value=c(""))
+      }
+    
+      tabPvalue = rbind(catPvalue, conPvalue)
+    
+      tab1 = tabDat %>%
+        left_join(tabPvalue, by=c("variables")) %>%
+        left_join(varOrder, by = c("variables")) %>%
+        arrange(order, values) %>%
+        group_by(variables) %>%
+        mutate(ranks = row_number()) %>%
+        mutate(p.value   = ifelse(ranks==min(ranks), p.value,   "")) %>%
+        mutate(variables = ifelse(ranks==min(ranks), variables, "")) %>%
+        ungroup() %>%
+        select(-order, -ranks)%>%
+        mutate(values = str_replace(values, "[:digit:]\\.", ""))
     }
-  
-    if(!is.null(conVars)){
-      conPvalue = tab.Ttest(dat1, stratas, conVars)
-    } else {
-      conPvalue = data.frame(variables=c(""), p.value=c(""))
-    }
-  
-  
-    tabPvalue = rbind(catPvalue, conPvalue)
-  
-    tab1 = tabDat %>%
-      left_join(tabPvalue, by=c("variables")) %>%
-      left_join(varOrder, by = c("variables")) %>%
-      arrange(order, values) %>%
-      group_by(variables) %>%
-      mutate(ranks = row_number()) %>%
-      mutate(p.value   = ifelse(ranks==min(ranks), p.value,   "")) %>%
-      mutate(variables = ifelse(ranks==min(ranks), variables, "")) %>%
-      ungroup() %>%
-      select(-order, -ranks)%>%
-      mutate(values = str_replace(values, "[:digit:]\\.", ""))
     return(tab1)
   })
 }
@@ -397,10 +448,12 @@ oddf=function(a){
         data.frame() %>%
         setNames(c("or", "ll", "ul", "pvalue")) %>%
         mutate(keys=rownames(mm))
-      
+
       bm1 = get_xlevels_df(a)
-      
-      numeric_cols = a$model %>% select(where(is.numeric))
+
+      # 종속변수 제외
+      outcome_var <- names(a$model)[1]
+      numeric_cols = a$model %>% select(-all_of(outcome_var)) %>% select(where(is.numeric))
       if(ncol(numeric_cols) > 0){
         bm2 = numeric_cols %>% slice(1:2) %>% pivot_longer(everything()) %>% select(variables = name) %>% mutate(values="") %>% unique()
       } else {
@@ -415,7 +468,7 @@ oddf=function(a){
       } else {
           bm0 = rbind(bm1, bm2) %>% mutate(keys= paste0(variables, values)) %>% unique()
       }
-  
+
       atab= bm0 %>%
         left_join(mm1, by=c("keys")) %>%
         mutate(OR95CI = case_when(
@@ -536,16 +589,18 @@ oddf0=function(a){
         data.frame() %>%
         setNames(c("or", "ll", "ul", "pvalue")) %>%
         mutate(keys=rownames(mm))
-        
+
       bm1 = get_xlevels_df(a)
-      
-      numeric_cols = a$model %>% select(where(is.numeric))
+
+      # 종속변수 제외
+      outcome_var <- names(a$model)[1]
+      numeric_cols = a$model %>% select(-all_of(outcome_var)) %>% select(where(is.numeric))
       if(ncol(numeric_cols) > 0){
         bm2 = numeric_cols %>% slice(1:2) %>% pivot_longer(everything()) %>% select(variables = name) %>% mutate(values="") %>% unique()
       } else {
         bm2 = data.frame()
       }
-      
+
       if(nrow(bm1) == 0 & nrow(bm2) == 0) {
           bm0 = data.frame()
       } else if (nrow(bm1) == 0) {
@@ -555,7 +610,7 @@ oddf0=function(a){
       } else {
           bm0 = rbind(bm1, bm2) %>% mutate(keys= paste0(variables, values)) %>% unique()
       }
-  
+
       atab= bm0 %>%
         left_join(mm1, by=c("keys")) %>%
         mutate(or = ifelse(is.na(or), 1.00, or),
@@ -570,4 +625,89 @@ oddf0=function(a){
       return(atab)
     }
   })
+}
+
+#' Summarize Missing Values
+#'
+#' This function calculates the count and percentage of missing values (NA) for each variable in a data frame.
+#'
+#' @param dat A data frame.
+#'
+#' @return A tibble with Variables, Total N, Missing N, and Missing %.
+#' @import dplyr tidyr purrr
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' missingf(mydata)
+#' }
+missingf = function(dat) {
+  res = purrr::map_df(names(dat), function(var) {
+    vec <- dat[[var]]
+    n_miss <- sum(is.na(vec))
+    n_total <- length(vec)
+    pct <- (n_miss / n_total) * 100
+    dplyr::tibble(
+      Variables = var,
+      `Total N` = n_total,
+      `Missing N` = n_miss,
+      `Missing %` = sprintf("%.1f%%", pct)
+    )
+  }) %>%
+    dplyr::arrange(dplyr::desc(`Missing N`)) %>%
+    dplyr::filter(`Missing N` > 0)
+    
+  if(nrow(res) == 0) {
+    message("No missing values found in the dataset.")
+  }
+  
+  return(res)
+}
+
+#' Generate Forest Plot from Logistic Regression
+#'
+#' This function takes a logistic regression model (`glm`) and generates a ggplot2 forest plot for the odds ratios.
+#'
+#' @param model A logistic regression model (`glm` object with `family = binomial`).
+#' @param title A character string for the plot title. Default is "Odds Ratios (95% CI)".
+#'
+#' @return A ggplot2 object representing the forest plot.
+#' @import broom dplyr ggplot2 stats
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' mod <- glm(disease ~ age + sex, data = df, family = binomial)
+#' forestf(mod)
+#' }
+forestf = function(model, title = "Odds Ratios (95% CI)") {
+  if (!requireNamespace("ggplot2", quietly = TRUE)) {
+    stop("Package \"ggplot2\" must be installed to use this function.", call. = FALSE)
+  }
+  
+  suppressWarnings({
+    suppressMessages({
+      res = broom::tidy(model, exponentiate = TRUE, conf.int = TRUE) %>%
+        dplyr::filter(term != "(Intercept)") %>%
+        dplyr::mutate(
+          Significance = ifelse(p.value < 0.05, "Significant", "Not Significant"),
+          Label = sprintf("%.2f (%.2f-%.2f)", estimate, conf.low, conf.high)
+        ) %>%
+        dplyr::arrange(dplyr::desc(estimate)) # Sort by OR
+    })
+  })
+    
+  p <- ggplot2::ggplot(res, ggplot2::aes(y = stats::reorder(term, estimate), x = estimate, xmin = conf.low, xmax = conf.high, color = Significance)) +
+    ggplot2::geom_pointrange(size = 0.8) +
+    ggplot2::geom_vline(xintercept = 1, linetype = "dashed", color = "gray50") +
+    ggplot2::scale_color_manual(values = c("Significant" = "#d73027", "Not Significant" = "#4575b4")) +
+    ggplot2::labs(title = title, x = "Odds Ratio", y = "Variables") +
+    ggplot2::theme_minimal() +
+    ggplot2::geom_text(ggplot2::aes(label = Label), vjust = -1, size = 3, show.legend = FALSE) +
+    ggplot2::theme(
+      panel.grid.minor = ggplot2::element_blank(),
+      legend.position = "bottom"
+    )
+  
+  return(p)
 }
