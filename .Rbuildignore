@@ -1,3 +1,4 @@
-^tabf\.Rproj$
+^.*\.Rproj$
 ^\.Rproj\.user$
-^README\.Rmd$
+^bkup$
+^CLAUDE\.md$

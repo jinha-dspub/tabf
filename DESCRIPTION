@@ -4,8 +4,20 @@ Version: 0.0.1.1
 Authors@R: 
     person("jinha", "yoon", , "jinha@dspubs.org", role = c("aut", "cre"),
            comment = c(ORCID = "https://orcid.org/0000-0003-4198-2955"))
-Description: 
-License: `use_mit_license()`
+Description: Provides functions for generating epidemiological baseline characteristics
+    (Table 1) and summarizing multiple logistic regression models with Odds Ratios
+    and 95% Confidence Intervals. Optimized for the AMH Framework.
+License: MIT
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
-RoxygenNote: 7.2.1
+RoxygenNote: 7.3.3
+Imports:
+    dplyr,
+    tidyr,
+    purrr,
+    stringr,
+    broom,
+    labelled,
+    htmlTable,
+    stats,
+    utils
