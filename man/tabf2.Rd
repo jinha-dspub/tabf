@@ -2,13 +2,26 @@
 % Please edit documentation in R/tabf.R
 \name{tabf2}
 \alias{tabf2}
-\title{Table 1 for public health (row sum)}
+\title{Generate Epidemiological Table 1 (Row Percentages)}
 \usage{
 tabf2(dat1, stratas, catVars, conVars)
 }
 \arguments{
-\item{conVars}{}
+\item{dat1}{A data frame.}
+
+\item{stratas}{A character string specifying the stratifying variable (e.g., "disease_status").}
+
+\item{catVars}{A character vector of categorical variable names.}
+
+\item{conVars}{A character vector of continuous variable names.}
+}
+\value{
+A formatted data frame ready for HTML/Markdown rendering.
 }
 \description{
-Table 1 for public health (row sum)
+Similar to \code{tabf()}, but for categorical variables, it calculates row percentages instead of column percentages.
+Useful when the strata variable represents an outcome and you want to see the prevalence/incidence across different category levels (e.g., prevalence of disease by age group).
+}
+\examples{
+# tabf2(mydata, "disease_outcome", c("age_group", "occupation"))
 }

@@ -2,13 +2,23 @@
 % Please edit documentation in R/tabf.R
 \name{tab.Chisq}
 \alias{tab.Chisq}
-\title{Chisq test}
+\title{Calculate Chi-Square Test Results for Table 1}
 \usage{
 tab.Chisq(dat1, stratas, catVars)
 }
 \arguments{
-\item{catVars}{}
+\item{dat1}{A data frame containing the variables for analysis.}
+
+\item{stratas}{A character string specifying the name of the stratifying variable (e.g., exposure or disease status).}
+
+\item{catVars}{A character vector specifying the names of the categorical variables to test against \code{stratas}.}
+}
+\value{
+A nested tibble containing the \code{variables} names and the formatted \code{p.value} (as "<0.001" or a 3-decimal string).
 }
 \description{
-Chisq test
+This function computes the p-values from a Pearson's Chi-squared test for multiple categorical variables against a stratifying variable. It is a core utility for generating Phase 3 Table 1 characteristics in epidemiological research.
+}
+\examples{
+# tab.Chisq(mydata, "exposure_group", c("sex", "age_group"))
 }

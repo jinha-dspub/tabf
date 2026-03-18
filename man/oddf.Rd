@@ -2,13 +2,19 @@
 % Please edit documentation in R/tabf.R
 \name{oddf}
 \alias{oddf}
-\title{logistic regression model summary}
+\title{Formatting Logistic Regression Summary (Single Model)}
 \usage{
 oddf(a)
 }
 \arguments{
-\item{a}{}
+\item{a}{A fitted logistic regression model object.}
+}
+\value{
+A formatted data frame with columns \code{variables}, \code{values}, and \code{OR95CI}.
 }
 \description{
-logistic regression model summary
+Parses a single logistic regression model into a formatted data frame showing variables, levels (values), and a combined \verb{OR (95\% CI)} column. It automatically highlights significant findings (p < 0.05) using Markdown/HTML bold tags and marks reference groups.
+}
+\examples{
+# oddf(glm(outcome ~ age + sex, family = binomial))
 }

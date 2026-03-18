@@ -2,13 +2,19 @@
 % Please edit documentation in R/tabf.R
 \name{modsmryf}
 \alias{modsmryf}
-\title{logistic regression model summary}
+\title{Summarize Logistic Regression Model}
 \usage{
 modsmryf(mod)
 }
 \arguments{
-\item{mod}{}
+\item{mod}{A fitted logistic regression model object (e.g., from \code{glm(..., family = binomial)}).}
+}
+\value{
+A matrix containing the exponentiated coefficients (OR), lower and upper 95\% confidence bounds, and p-values.
 }
 \description{
-logistic regression model summary
+Extracts and exponentiates coefficients to calculate Odds Ratios (OR) and 95\% Confidence Intervals (CI), along with p-values from a binary logistic regression model.
+}
+\examples{
+# modsmryf(glm(outcome ~ exposure, family = binomial, data = mydata))
 }

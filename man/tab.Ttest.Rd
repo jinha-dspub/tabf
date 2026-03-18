@@ -2,13 +2,23 @@
 % Please edit documentation in R/tabf.R
 \name{tab.Ttest}
 \alias{tab.Ttest}
-\title{T-test}
+\title{Calculate T-Test Results for Table 1}
 \usage{
 tab.Ttest(dat1, stratas, conVars)
 }
 \arguments{
-\item{conVars}{}
+\item{dat1}{A data frame containing the variables for analysis.}
+
+\item{stratas}{A character string specifying the name of the binary stratifying variable.}
+
+\item{conVars}{A character vector specifying the names of the continuous variables to test against \code{stratas}.}
+}
+\value{
+A nested tibble containing the \code{variables} names and the formatted \code{p.value} (as "<0.001" or a 3-decimal string).
 }
 \description{
-T-test
+This function computes p-values using Student's t-test for comparing the means of multiple continuous variables across a two-level stratifying variable. Used in Phase 3 Table 1 construction.
+}
+\examples{
+# tab.Ttest(mydata, "exposure_binary", c("age", "bmi"))
 }

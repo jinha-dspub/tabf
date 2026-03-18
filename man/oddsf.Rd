@@ -2,13 +2,21 @@
 % Please edit documentation in R/tabf.R
 \name{oddsf}
 \alias{oddsf}
-\title{Two or more logistic regression model summary table}
+\title{Mutiple Logistic Regression Models Summary Table}
 \usage{
-oddsf(...)
+oddsf(..., model_names = NULL)
 }
 \arguments{
-\item{...}{}
+\item{...}{Multiple fitted logistic regression model objects.}
+
+\item{model_names}{An optional character vector of names for the models (e.g., c("Model 1", "Model 2")). If NULL, defaults to "Model.I", "Model.II", etc.}
+}
+\value{
+A data frame juxtaposing the OR (95\% CI) of the supplied models side-by-side.
 }
 \description{
-Two or more logistic regression model summary table
+Takes multiple logistic regression models (e.g., sequentially adjusted models M1, M2, M3) and combines their \code{oddf()} outputs into a single, comprehensive comparison table. Essential for Phase 4 of epidemiological research.
+}
+\examples{
+# oddsf(mod1, mod2, mod3, model_names = c("Crude", "+ Age/Sex", "Fully Adjusted"))
 }

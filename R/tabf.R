@@ -1,13 +1,17 @@
-#' Chisq test
+#' Calculate Chi-Square Test Results for Table 1
 #'
-#' @param dat1
-#' @param stratas
-#' @param catVars
+#' This function computes the p-values from a Pearson's Chi-squared test for multiple categorical variables against a stratifying variable. It is a core utility for generating Phase 3 Table 1 characteristics in epidemiological research.
 #'
-#' @return
+#' @param dat1 A data frame containing the variables for analysis.
+#' @param stratas A character string specifying the name of the stratifying variable (e.g., exposure or disease status).
+#' @param catVars A character vector specifying the names of the categorical variables to test against `stratas`.
+#'
+#' @return A nested tibble containing the `variables` names and the formatted `p.value` (as "<0.001" or a 3-decimal string).
+#' @import dplyr tidyr purrr broom
 #' @export
 #'
 #' @examples
+#' # tab.Chisq(mydata, "exposure_group", c("sex", "age_group"))
 tab.Chisq = function(dat1, stratas, catVars){
   var_label(dat1) <- NULL
   dat1 = remove_labels(dat1)
@@ -30,16 +34,20 @@ tab.Chisq = function(dat1, stratas, catVars){
     mutate(p.value = ifelse(p.value <0.001, "<0.001", sprintf("%.3f", p.value)))
 }
 
-#' T-test
+#' Calculate T-Test Results for Table 1
 #'
-#' @param dat1
-#' @param stratas
-#' @param conVars
+#' This function computes p-values using Student's t-test for comparing the means of multiple continuous variables across a two-level stratifying variable. Used in Phase 3 Table 1 construction.
 #'
-#' @return
+#' @param dat1 A data frame containing the variables for analysis.
+#' @param stratas A character string specifying the name of the binary stratifying variable.
+#' @param conVars A character vector specifying the names of the continuous variables to test against `stratas`.
+#'
+#' @return A nested tibble containing the `variables` names and the formatted `p.value` (as "<0.001" or a 3-decimal string).
+#' @import dplyr tidyr purrr broom
 #' @export
 #'
 #' @examples
+#' # tab.Ttest(mydata, "exposure_binary", c("age", "bmi"))
 tab.Ttest =function(dat1, stratas, conVars){
   var_label(dat1) <- NULL
   dat1 = remove_labels(dat1)
@@ -57,17 +65,22 @@ tab.Ttest =function(dat1, stratas, conVars){
     mutate(p.value = ifelse(p.value <0.001, "<0.001", sprintf("%.3f", p.value)))
 }
 
-#' table 1 functon for public health (col sum)
+#' Generate Epidemiological Table 1 (Column Percentages)
 #'
-#' @param dat1
-#' @param stratas
-#' @param catVars
-#' @param conVars
+#' Creates a standardized 'Table 1' (baseline characteristics) commonly used in public health and epidemiological research.
+#' For categorical variables, it calculates counts and column percentages. For continuous variables, it calculates means and standard deviations. It automatically appends p-values using chi-square tests and t-tests.
 #'
-#' @return
+#' @param dat1 A data frame.
+#' @param stratas A character string specifying the stratifying variable (e.g., "sex" or "disease_status"). If not stratifying, provide a dummy variable.
+#' @param catVars A character vector of categorical variable names. Can be missing.
+#' @param conVars A character vector of continuous variable names. Can be missing.
+#'
+#' @return A formatted data frame ready for HTML/Markdown rendering with `Variables`, `Values`, strata levels, and `p.value`.
+#' @import dplyr tidyr purrr stringr broom 
 #' @export
 #'
 #' @examples
+#' # tabf(mydata, "disease", c("sex", "smoking"), c("age", "bmi"))
 tabf = function(dat1, stratas, catVars, conVars){
   var_label(dat1) <- NULL
   dat1 = remove_labels(dat1)
@@ -207,17 +220,22 @@ tabf = function(dat1, stratas, catVars, conVars){
 
 
 
-#' Table 1 for public health (row sum)
+#' Generate Epidemiological Table 1 (Row Percentages)
 #'
-#' @param dat1
-#' @param stratas
-#' @param catVars
-#' @param conVars
+#' Similar to `tabf()`, but for categorical variables, it calculates row percentages instead of column percentages.
+#' Useful when the strata variable represents an outcome and you want to see the prevalence/incidence across different category levels (e.g., prevalence of disease by age group).
 #'
-#' @return
+#' @param dat1 A data frame.
+#' @param stratas A character string specifying the stratifying variable (e.g., "disease_status"). 
+#' @param catVars A character vector of categorical variable names.
+#' @param conVars A character vector of continuous variable names.
+#'
+#' @return A formatted data frame ready for HTML/Markdown rendering.
+#' @import dplyr tidyr purrr stringr broom
 #' @export
 #'
 #' @examples
+#' # tabf2(mydata, "disease_outcome", c("age_group", "occupation"))
 tabf2 = function(dat1, stratas, catVars, conVars){
   var_label(dat1) <- NULL
   dat1 = remove_labels(dat1)
@@ -355,25 +373,33 @@ tabf2 = function(dat1, stratas, catVars, conVars){
   return(tab1)
 }  %>% suppressWarnings()
 
-#' logistic regression model summary
+#' Summarize Logistic Regression Model 
 #'
-#' @param mod
+#' Extracts and exponentiates coefficients to calculate Odds Ratios (OR) and 95% Confidence Intervals (CI), along with p-values from a binary logistic regression model.
 #'
-#' @return
+#' @param mod A fitted logistic regression model object (e.g., from `glm(..., family = binomial)`).
+#'
+#' @return A matrix containing the exponentiated coefficients (OR), lower and upper 95% confidence bounds, and p-values.
+#' @import dplyr broom
 #' @export
 #'
 #' @examples
+#' # modsmryf(glm(outcome ~ exposure, family = binomial, data = mydata))
 modsmryf=function(mod) {
   cbind(mod$coefficients %>% exp(.), confint.default(mod)%>% exp(.), mod %>% tidy() %>% select(p.value))}
 
-#' logistic regression model summary
+#' Formatting Logistic Regression Summary (Single Model)
 #'
-#' @param a
+#' Parses a single logistic regression model into a formatted data frame showing variables, levels (values), and a combined `OR (95% CI)` column. It automatically highlights significant findings (p < 0.05) using Markdown/HTML bold tags and marks reference groups.
 #'
-#' @return
+#' @param a A fitted logistic regression model object.
+#'
+#' @return A formatted data frame with columns `variables`, `values`, and `OR95CI`.
+#' @import dplyr tidyr purrr
 #' @export
 #'
 #' @examples
+#' # oddf(glm(outcome ~ age + sex, family = binomial))
 oddf=function(a){
   if(!missing(a)){
     mm = modsmryf(a)
@@ -426,14 +452,19 @@ oddf=function(a){
 } %>% suppressWarnings()
 
 
-#' Two or more logistic regression model summary table
+#' Mutiple Logistic Regression Models Summary Table
 #'
-#' @param ...
+#' Takes multiple logistic regression models (e.g., sequentially adjusted models M1, M2, M3) and combines their `oddf()` outputs into a single, comprehensive comparison table. Essential for Phase 4 of epidemiological research.
 #'
-#' @return
+#' @param ... Multiple fitted logistic regression model objects.
+#' @param model_names An optional character vector of names for the models (e.g., c("Model 1", "Model 2")). If NULL, defaults to "Model.I", "Model.II", etc.
+#'
+#' @return A data frame juxtaposing the OR (95% CI) of the supplied models side-by-side.
+#' @import dplyr purrr stringr
 #' @export
 #'
 #' @examples
+#' # oddsf(mod1, mod2, mod3, model_names = c("Crude", "+ Age/Sex", "Fully Adjusted"))
 oddsf = function(..., model_names = NULL){
   arglist = list(...)
   tt = map(arglist, oddf) %>%
@@ -456,14 +487,19 @@ oddsf = function(..., model_names = NULL){
 }
 
 
-#' Two or more logistic regression model summary table with html
+#' Multiple Logistic Regression Models Summary Table (HTML)
 #'
-#' @param ...
+#' Similar to `oddsf()`, but immediately renders the output as a styled HTML table using the `htmlTable` package.
 #'
-#' @return
+#' @param ... Multiple fitted logistic regression model objects.
+#' @param model_names An optional character vector of names for the models.
+#'
+#' @return An `htmlTable` object ready for viewing or knitting in an RMarkdown/Quarto document.
+#' @import dplyr purrr stringr htmlTable
 #' @export
 #'
 #' @examples
+#' # oddsTabf(mod1, mod2)
 oddsTabf = function(..., model_names = NULL){
   arglist = list(...)
   mod1 = arglist[[1]]
@@ -496,14 +532,18 @@ oddsTabf = function(..., model_names = NULL){
 
 
 
-#' Two or more logistic regression model data.frame
+#' Raw Logistic Regression Summary Data Frame
 #'
-#' @param a
+#' Similar to `oddf()`, but instead of formatting the output into a single `OR (95% CI)` string, it returns the raw numeric values (`or`, `ll`, `ul`) in separate columns. Useful for downstream plotting (e.g., Forest plots).
 #'
-#' @return
+#' @param a A fitted logistic regression model object.
+#'
+#' @return A data frame with columns `variables`, `values`, `or`, `ll`, and `ul`.
+#' @import dplyr tidyr purrr
 #' @export
 #'
 #' @examples
+#' # oddf0(mod) 
 oddf0=function(a){
   if(!missing(a)){
     mm = modsmryf(a)

@@ -2,13 +2,21 @@
 % Please edit documentation in R/tabf.R
 \name{oddsTabf}
 \alias{oddsTabf}
-\title{Two or more logistic regression model summary table with html}
+\title{Multiple Logistic Regression Models Summary Table (HTML)}
 \usage{
-oddsTabf(...)
+oddsTabf(..., model_names = NULL)
 }
 \arguments{
-\item{...}{}
+\item{...}{Multiple fitted logistic regression model objects.}
+
+\item{model_names}{An optional character vector of names for the models.}
+}
+\value{
+An \code{htmlTable} object ready for viewing or knitting in an RMarkdown/Quarto document.
 }
 \description{
-Two or more logistic regression model summary table with html
+Similar to \code{oddsf()}, but immediately renders the output as a styled HTML table using the \code{htmlTable} package.
+}
+\examples{
+# oddsTabf(mod1, mod2)
 }

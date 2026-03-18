@@ -2,13 +2,26 @@
 % Please edit documentation in R/tabf.R
 \name{tabf}
 \alias{tabf}
-\title{table 1 functon for public health (col sum)}
+\title{Generate Epidemiological Table 1 (Column Percentages)}
 \usage{
 tabf(dat1, stratas, catVars, conVars)
 }
 \arguments{
-\item{conVars}{}
+\item{dat1}{A data frame.}
+
+\item{stratas}{A character string specifying the stratifying variable (e.g., "sex" or "disease_status"). If not stratifying, provide a dummy variable.}
+
+\item{catVars}{A character vector of categorical variable names. Can be missing.}
+
+\item{conVars}{A character vector of continuous variable names. Can be missing.}
+}
+\value{
+A formatted data frame ready for HTML/Markdown rendering with \code{Variables}, \code{Values}, strata levels, and \code{p.value}.
 }
 \description{
-table 1 functon for public health (col sum)
+Creates a standardized 'Table 1' (baseline characteristics) commonly used in public health and epidemiological research.
+For categorical variables, it calculates counts and column percentages. For continuous variables, it calculates means and standard deviations. It automatically appends p-values using chi-square tests and t-tests.
+}
+\examples{
+# tabf(mydata, "disease", c("sex", "smoking"), c("age", "bmi"))
 }

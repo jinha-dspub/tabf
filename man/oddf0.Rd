@@ -2,13 +2,19 @@
 % Please edit documentation in R/tabf.R
 \name{oddf0}
 \alias{oddf0}
-\title{Two or more logistic regression model data.frame}
+\title{Raw Logistic Regression Summary Data Frame}
 \usage{
 oddf0(a)
 }
 \arguments{
-\item{a}{}
+\item{a}{A fitted logistic regression model object.}
+}
+\value{
+A data frame with columns \code{variables}, \code{values}, \code{or}, \code{ll}, and \code{ul}.
 }
 \description{
-Two or more logistic regression model data.frame
+Similar to \code{oddf()}, but instead of formatting the output into a single \verb{OR (95\% CI)} string, it returns the raw numeric values (\code{or}, \code{ll}, \code{ul}) in separate columns. Useful for downstream plotting (e.g., Forest plots).
+}
+\examples{
+# oddf0(mod) 
 }
