@@ -26,7 +26,7 @@ You can install the development version of tabf from [GitHub](https://github.com
 
 ``` r
 # install.packages("devtools")
-devtools::install_github("dspubs/tabf")
+devtools::install_github("jinha-dspub/tabf")
 ```
 
 You can use

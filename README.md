@@ -15,7 +15,7 @@ You can install the development version of tabf from
 
 ``` r
 # install.packages("devtools")
-devtools::install_github("dspubs/tabf")
+devtools::install_github("jinha-dspub/tabf")
 ```
 
 You can use tabf, tabf2, modsmryf, oddf, oddsf, oddsTabf, oddf0
