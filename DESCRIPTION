@@ -1,13 +1,13 @@
 Package: tabf
 Title: table function for public health
-Version: 0.0.1.1
+Version: 0.0.1.2
 Authors@R: 
     person("jinha", "yoon", , "jinha@dspubs.org", role = c("aut", "cre"),
            comment = c(ORCID = "https://orcid.org/0000-0003-4198-2955"))
 Description: Provides functions for generating epidemiological baseline characteristics
-    (Table 1) and summarizing multiple logistic regression models with Odds Ratios
-    and 95% Confidence Intervals. Optimized for the AMH Framework.
-License: MIT
+    (Table 1), logistic/linear regression model summaries, interaction analysis,
+    and forest plot visualization. Optimized for the AMH Framework.
+License: MIT + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
@@ -19,6 +19,7 @@ Imports:
     broom,
     labelled,
     htmlTable,
+    tibble,
     stats,
     utils,
     ggplot2

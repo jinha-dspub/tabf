@@ -2,7 +2,10 @@
 utils::globalVariables(c(
   "variables", "values", "n", "prob", "smry", "avg", "std", "p.value",
   "ranks", "order", "tidied", "fit", "dat", ".stratas_tmp", "data",
-  "or", "ll", "ul", "pvalue", "keys", "OR95CI", "Variables", "rank", "name"
+
+  "or", "ll", "ul", "pvalue", "keys", "OR95CI", "Variables", "rank", "name",
+  "term", "estimate", "conf.low", "conf.high", "Significance", "Label", "Missing N",
+  "beta", "se", "Beta95CI", "Subgroup", "OR_CI", "p_int", "std.error"
 ))
 
 #' Calculate Chi-Square Test Results for Table 1
@@ -14,8 +17,8 @@ utils::globalVariables(c(
 #' @param catVars A character vector specifying the names of the categorical variables to test against `stratas`.
 #'
 #' @return A nested tibble containing the `variables` names and the formatted `p.value` (as "<0.001" or a 3-decimal string).
-#' @import dplyr tidyr purrr broom labelled
-#' @importFrom stats confint.default na.omit sd setNames t.test chisq.test
+#' @import dplyr tidyr purrr broom labelled stringr
+#' @importFrom stats confint.default na.omit sd setNames t.test chisq.test aov
 #' @importFrom utils as.roman head
 #' @export
 #'
@@ -32,18 +35,38 @@ tab.Chisq = function(dat1, stratas, catVars){
       pivot_longer(-all_of(stratas), names_to = "variables", values_to ="values")%>%
       group_by(variables, values) %>%
       count(!!sym(stratas)) %>%
-      pivot_wider(names_from = all_of(stratas), values_from =n) %>%
+      pivot_wider(names_from = all_of(stratas), values_from = n,
+                  values_fill = 0) %>%
       ungroup() %>%
       select(-values) %>%
       nest(dat = -variables) %>%
       mutate(
-        fit = map(dat,
-                  ~chisq.test(.x)),
-        tidied = map(fit, tidy)
+        fit = map(dat, ~{
+          m <- as.matrix(.x)
+          m <- m[rowSums(m) > 0, colSums(m) > 0, drop = FALSE]
+          if (nrow(m) < 2 || ncol(m) < 2) return(list(p.value = NA_real_))
+          exp_ok <- tryCatch(
+            suppressWarnings(all(chisq.test(m)$expected >= 5)),
+            error = function(e) FALSE
+          )
+          if (exp_ok) chisq.test(m)
+          else fisher.test(m, simulate.p.value = TRUE, B = 10000)
+        }),
+        tidied = map(fit, ~{
+          if (is.list(.x) && !inherits(.x, "htest")) {
+            tibble::tibble(p.value = .x$p.value)
+          } else {
+            broom::tidy(.x)
+          }
+        })
       ) %>%
       unnest(tidied) %>%
       select(variables, p.value) %>%
-      mutate(p.value = ifelse(p.value <0.001, "<0.001", sprintf("%.3f", p.value)))
+      mutate(p.value = case_when(
+        is.na(p.value)  ~ "",
+        p.value < 0.001 ~ "<0.001",
+        TRUE            ~ sprintf("%.3f", p.value)
+      ))
   })
 }
 
@@ -672,7 +695,7 @@ missingf = function(dat) {
 #' @param title A character string for the plot title. Default is "Odds Ratios (95% CI)".
 #'
 #' @return A ggplot2 object representing the forest plot.
-#' @import broom dplyr ggplot2 stats
+#' @import broom dplyr ggplot2
 #' @export
 #'
 #' @examples
@@ -710,4 +733,389 @@ forestf = function(model, title = "Odds Ratios (95% CI)") {
     )
   
   return(p)
+}
+
+# =============================================================================
+# LINEAR REGRESSION FUNCTIONS
+# =============================================================================
+
+#' Linear Regression Model Summary
+#'
+#' Extracts beta coefficients with 95% confidence intervals from a linear regression model.
+#'
+#' @param model A fitted linear regression model object (`lm`).
+#'
+#' @return A data frame with columns: term, beta, conf.low, conf.high, p.value.
+#' @import broom dplyr
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' mod <- lm(bmi ~ age + sex, data = df)
+#' lmsmryf(mod)
+#' }
+lmsmryf = function(model) {
+  suppressWarnings({
+    result <- broom::tidy(model, conf.int = TRUE) %>%
+      dplyr::filter(term != "(Intercept)") %>%
+      dplyr::select(term, estimate, conf.low, conf.high, p.value) %>%
+      dplyr::rename(beta = estimate)
+    return(result)
+  })
+}
+
+#' Format Linear Regression Results as Beta (95% CI)
+#'
+#' Formats linear regression results similar to `oddf()` but for beta coefficients.
+#'
+#' @param a A fitted linear regression model object (`lm`).
+#'
+#' @return A data frame with columns: variables, values, Beta95CI.
+#' @import dplyr tidyr purrr
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' mod <- lm(bmi ~ age + sex, data = df)
+#' betaf(mod)
+#' }
+betaf = function(a) {
+  suppressWarnings({
+    if(!missing(a)) {
+      mm <- broom::tidy(a, conf.int = TRUE) %>%
+        dplyr::filter(term != "(Intercept)") %>%
+        dplyr::mutate(
+          Beta95CI = sprintf("%.2f (%.2f, %.2f)", estimate, conf.low, conf.high),
+          Beta95CI = ifelse(p.value < 0.05,
+                           paste0("<b>", Beta95CI, "</b>"),
+                           Beta95CI)
+        ) %>%
+        dplyr::select(term, Beta95CI)
+
+      # Parse term into variables and values
+      xlevels <- a$xlevels
+      if(length(xlevels) > 0) {
+        xlevels_df <- purrr::imap_dfr(xlevels, ~tibble::tibble(
+          variables = .y,
+          values = .x
+        )) %>%
+          dplyr::mutate(term = paste0(variables, values))
+      } else {
+        xlevels_df <- tibble::tibble(variables = character(), values = character(), term = character())
+      }
+
+      # Handle numeric variables
+      numeric_vars <- names(a$model)[sapply(a$model, is.numeric)]
+      numeric_vars <- setdiff(numeric_vars, names(a$model)[1])  # exclude outcome
+
+      if(length(numeric_vars) > 0) {
+        numeric_df <- tibble::tibble(
+          variables = numeric_vars,
+          values = "",
+          term = numeric_vars
+        )
+        xlevels_df <- dplyr::bind_rows(xlevels_df, numeric_df)
+      }
+
+      # Add reference categories
+      if(length(xlevels) > 0) {
+        ref_df <- purrr::imap_dfr(xlevels, ~tibble::tibble(
+          variables = .y,
+          values = .x[1],
+          term = paste0(.y, .x[1]),
+          Beta95CI = "<i>0.00 (reference)</i>"
+        ))
+
+        result <- xlevels_df %>%
+          dplyr::left_join(mm, by = "term") %>%
+          dplyr::bind_rows(ref_df %>% dplyr::filter(!term %in% xlevels_df$term)) %>%
+          dplyr::arrange(variables, values) %>%
+          dplyr::mutate(Beta95CI = ifelse(is.na(Beta95CI), "<i>0.00 (reference)</i>", Beta95CI)) %>%
+          dplyr::select(variables, values, Beta95CI)
+      } else {
+        result <- xlevels_df %>%
+          dplyr::left_join(mm, by = "term") %>%
+          dplyr::select(variables, values, Beta95CI)
+      }
+
+      return(result)
+    } else {
+      return(data.frame(variables = NA, values = NA, Beta95CI = NA))
+    }
+  })
+}
+
+#' Combined Linear Regression Beta Table
+#'
+#' Combines multiple linear regression models into a single HTML table showing Beta (95% CI).
+#' Similar to `oddsTabf()` but for linear regression models.
+#'
+#' @param ... Multiple fitted linear regression model objects (`lm`).
+#' @param model_names An optional character vector of names for the models.
+#'
+#' @return An `htmlTable` object ready for viewing.
+#' @import dplyr purrr stringr htmlTable
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' mod1 <- lm(bmi ~ shift_work, data = df)
+#' mod2 <- lm(bmi ~ shift_work + age + sex, data = df)
+#' lmTabf(mod1, mod2)
+#' }
+lmTabf = function(..., model_names = NULL) {
+  arglist <- list(...)
+  mod1 <- arglist[[1]]
+
+  tt <- purrr::map(arglist, betaf) %>%
+    purrr::reduce(dplyr::full_join, by = c("variables", "values"))
+
+  vl <- length(tt) - 2
+
+  if (is.null(model_names)) {
+    model_names <- paste0("Model.", utils::as.roman(1:vl))
+  }
+  model_names <- utils::head(c(model_names, rep("", max(0, vl - length(model_names)))), vl)
+
+  ys <- as.character(mod1$terms[[2]])
+  tt <- tt %>% setNames(c("Variables", "Values", model_names))
+
+  tt %>%
+    `rownames<-`(NULL) %>%
+    dplyr::group_by(Variables) %>%
+    dplyr::mutate(rank = dplyr::row_number()) %>%
+    dplyr::mutate(Variables = ifelse(rank == min(rank), Variables, "")) %>%
+    dplyr::mutate(dplyr::across(dplyr::starts_with("Model"), ~replace(., is.na(.), ""))) %>%
+    dplyr::ungroup() %>%
+    dplyr::select(-rank) %>%
+    htmlTable::addHtmlTableStyle(align = 'll') %>%
+    htmlTable::htmlTable(
+      rnames = FALSE,
+      caption = sprintf("Table. Beta (95%% CI) for %s", ys)
+    )
+}
+
+# =============================================================================
+# INTERACTION ANALYSIS FUNCTIONS
+# =============================================================================
+
+#' Run Interaction Model
+#'
+#' Fits a logistic or linear regression model with an interaction term and returns
+#' stratified results along with the p-value for interaction.
+#'
+#' @param data A data frame containing the variables.
+#' @param Y Character string specifying the outcome variable name.
+#' @param X Character string specifying the main exposure variable name.
+#' @param modifier Character string specifying the effect modifier variable name.
+#' @param covars Character vector of covariate names to adjust for.
+#' @param family Model family: "binomial" for logistic regression, "gaussian" for linear.
+#'
+#' @return A list containing: interaction model, stratified models, and p-interaction.
+#' @import dplyr broom
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' result <- interf(data = df, Y = "depression", X = "work_hours",
+#'                  modifier = "sex", covars = c("age"), family = "binomial")
+#' }
+interf = function(data, Y, X, modifier, covars = NULL, family = "binomial") {
+  suppressWarnings({
+    # Build formula
+    if(!is.null(covars) && length(covars) > 0) {
+      covar_str <- paste(covars, collapse = " + ")
+      formula_int <- stats::as.formula(paste(Y, "~", X, "*", modifier, "+", covar_str))
+      formula_main <- stats::as.formula(paste(Y, "~", X, "+", covar_str))
+    } else {
+      formula_int <- stats::as.formula(paste(Y, "~", X, "*", modifier))
+      formula_main <- stats::as.formula(paste(Y, "~", X))
+    }
+
+    # Fit interaction model
+    if(family == "binomial") {
+      mod_int <- stats::glm(formula_int, data = data, family = stats::binomial())
+    } else {
+      mod_int <- stats::lm(formula_int, data = data)
+    }
+
+    # Extract p-value for interaction term
+    int_term <- paste0(X, ":", modifier)
+    int_term_alt <- paste0(modifier, ":", X)
+
+    tidy_int <- broom::tidy(mod_int)
+    p_int <- tidy_int %>%
+      dplyr::filter(grepl(paste0("^", X, ".*:", modifier), term) |
+                   grepl(paste0("^", modifier, ".*:", X), term)) %>%
+      dplyr::pull(p.value)
+
+    if(length(p_int) == 0) p_int <- NA
+    if(length(p_int) > 1) p_int <- min(p_int)  # take minimum if multiple interaction terms
+
+    # Fit stratified models
+    modifier_levels <- unique(stats::na.omit(data[[modifier]]))
+    stratified_models <- list()
+
+    for(level in modifier_levels) {
+      subset_data <- data[data[[modifier]] == level, ]
+      if(family == "binomial") {
+        stratified_models[[as.character(level)]] <- stats::glm(formula_main,
+                                                               data = subset_data,
+                                                               family = stats::binomial())
+      } else {
+        stratified_models[[as.character(level)]] <- stats::lm(formula_main,
+                                                              data = subset_data)
+      }
+    }
+
+    result <- list(
+      interaction_model = mod_int,
+      stratified_models = stratified_models,
+      p_interaction = p_int,
+      modifier = modifier,
+      modifier_levels = modifier_levels,
+      family = family
+    )
+
+    class(result) <- c("interf_result", class(result))
+    return(result)
+  })
+}
+
+#' Interaction Analysis OR/Beta Table
+#'
+#' Creates an HTML table showing stratified OR (or Beta) with p-value for interaction.
+#'
+#' @param result An object returned by `interf()`.
+#' @param digits Number of decimal places for estimates. Default is 2.
+#'
+#' @return An `htmlTable` object showing stratified results and p-interaction.
+#' @import dplyr purrr htmlTable broom
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' result <- interf(data = df, Y = "depression", X = "work_hours",
+#'                  modifier = "sex", covars = c("age"), family = "binomial")
+#' interTabf(result)
+#' }
+interTabf = function(result, digits = 2) {
+  suppressWarnings({
+    family <- result$family
+    modifier <- result$modifier
+    p_int <- result$p_interaction
+
+    # Extract results from stratified models
+    strat_results <- purrr::imap_dfr(result$stratified_models, function(mod, level) {
+      if(family == "binomial") {
+        tidy_res <- broom::tidy(mod, exponentiate = TRUE, conf.int = TRUE)
+        tidy_res %>%
+          dplyr::filter(term != "(Intercept)") %>%
+          dplyr::mutate(
+            OR_CI = sprintf(paste0("%.", digits, "f (%.", digits, "f-%.", digits, "f)"),
+                           estimate, conf.low, conf.high),
+            OR_CI = ifelse(p.value < 0.05, paste0("<b>", OR_CI, "</b>"), OR_CI),
+            Subgroup = level
+          ) %>%
+          dplyr::select(term, Subgroup, OR_CI)
+      } else {
+        tidy_res <- broom::tidy(mod, conf.int = TRUE)
+        tidy_res %>%
+          dplyr::filter(term != "(Intercept)") %>%
+          dplyr::mutate(
+            OR_CI = sprintf(paste0("%.", digits, "f (%.", digits, "f, %.", digits, "f)"),
+                           estimate, conf.low, conf.high),
+            OR_CI = ifelse(p.value < 0.05, paste0("<b>", OR_CI, "</b>"), OR_CI),
+            Subgroup = level
+          ) %>%
+          dplyr::select(term, Subgroup, OR_CI)
+      }
+    })
+
+    # Pivot to wide format
+    wide_results <- strat_results %>%
+      tidyr::pivot_wider(names_from = Subgroup, values_from = OR_CI)
+
+    # Add p-interaction column
+    wide_results$p_int <- ""
+    wide_results$p_int[1] <- ifelse(is.na(p_int), "-",
+                                    ifelse(p_int < 0.001, "<0.001",
+                                           sprintf("%.3f", p_int)))
+
+    # Format table
+    col_names <- c("Variable", result$modifier_levels, "p-interaction")
+    names(wide_results) <- col_names
+
+    estimate_label <- ifelse(family == "binomial", "OR (95% CI)", "Beta (95% CI)")
+
+    wide_results %>%
+      htmlTable::addHtmlTableStyle(align = paste0("l", paste(rep("c", ncol(wide_results)-1), collapse = ""))) %>%
+      htmlTable::htmlTable(
+        rnames = FALSE,
+        caption = sprintf("Table. Stratified %s by %s", estimate_label, modifier)
+      )
+  })
+}
+
+#' Forest Plot for Interaction Analysis
+#'
+#' Creates a forest plot showing stratified estimates from interaction analysis.
+#'
+#' @param result An object returned by `interf()`.
+#' @param title Plot title. Default is "Stratified Analysis".
+#'
+#' @return A ggplot2 object.
+#' @import ggplot2 dplyr purrr broom
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' result <- interf(data = df, Y = "depression", X = "work_hours",
+#'                  modifier = "sex", covars = c("age"), family = "binomial")
+#' interPlotf(result)
+#' }
+interPlotf = function(result, title = "Stratified Analysis") {
+  suppressWarnings({
+    family <- result$family
+    modifier <- result$modifier
+    p_int <- result$p_interaction
+
+    # Extract results from stratified models
+    plot_data <- purrr::imap_dfr(result$stratified_models, function(mod, level) {
+      if(family == "binomial") {
+        tidy_res <- broom::tidy(mod, exponentiate = TRUE, conf.int = TRUE)
+      } else {
+        tidy_res <- broom::tidy(mod, conf.int = TRUE)
+      }
+      tidy_res %>%
+        dplyr::filter(term != "(Intercept)") %>%
+        dplyr::mutate(Subgroup = level)
+    })
+
+    # Reference line
+    ref_line <- ifelse(family == "binomial", 1, 0)
+    x_label <- ifelse(family == "binomial", "Odds Ratio", "Beta Coefficient")
+
+    p_label <- ifelse(is.na(p_int), "p-int: NA",
+                     ifelse(p_int < 0.001, "p-int < 0.001",
+                            sprintf("p-int = %.3f", p_int)))
+
+    p <- ggplot2::ggplot(plot_data, ggplot2::aes(x = estimate, y = term,
+                                                  xmin = conf.low, xmax = conf.high,
+                                                  color = Subgroup)) +
+      ggplot2::geom_pointrange(position = ggplot2::position_dodge(width = 0.5), size = 0.8) +
+      ggplot2::geom_vline(xintercept = ref_line, linetype = "dashed", color = "gray50") +
+      ggplot2::labs(title = title,
+                   subtitle = p_label,
+                   x = x_label,
+                   y = "Variables",
+                   color = modifier) +
+      ggplot2::theme_minimal() +
+      ggplot2::theme(
+        panel.grid.minor = ggplot2::element_blank(),
+        legend.position = "bottom"
+      )
+
+    return(p)
+  })
 }
